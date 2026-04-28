@@ -54,12 +54,24 @@ def _get_table_columns(table_name: str):
     return [column["name"] for column in columns]
 
 
+def parse_value(value):
+    try:
+        if isinstance(value, str) and "." in value:
+            return float(value)
+        return int(value)
+    except Exception:
+        return value
+
+
 def get_filtered_data(
     table_name: str,
     limit: int = 10,
     offset: int = 0,
     filters: dict | None = None,
-):
+    sort_by: str | None = None,
+    order: str = "asc",
+    fields: str | None = None,
+): 
     if not re.match(r'^[A-Za-z0-9_]+$', table_name):
         raise ValueError(f"Invalid table name: {table_name}")
 
@@ -78,9 +90,35 @@ def get_filtered_data(
         "gte": ">=",
         "lte": "<=",
         "like": "LIKE",
+        "in": "IN",
+        "between": "BETWEEN",
     }
 
     valid_columns_lower = {col.lower(): col for col in valid_columns}
+
+    if fields:
+        selected_fields = [item.strip() for item in fields.split(",") if item.strip()]
+        if not selected_fields:
+            raise ValueError("fields must contain at least one column")
+        select_columns = []
+        for field in selected_fields:
+            field_lower = field.lower()
+            if field_lower not in valid_columns_lower:
+                raise ValueError(f"Invalid field selection: {field}")
+            select_columns.append(valid_columns_lower[field_lower])
+        select_clause = f"SELECT {', '.join(select_columns)}"
+    else:
+        select_clause = "SELECT *"
+
+    order_clause = ""
+    if sort_by:
+        sort_by_lower = sort_by.lower()
+        if sort_by_lower not in valid_columns_lower:
+            raise ValueError(f"Invalid sort_by column: {sort_by}")
+        normalized_order = order.lower()
+        if normalized_order not in {"asc", "desc"}:
+            raise ValueError("order must be 'asc' or 'desc'")
+        order_clause = f"ORDER BY {valid_columns_lower[sort_by_lower]} {normalized_order.upper()}"
 
     for key, value in filters.items():
         if not re.match(r'^[A-Za-z0-9_]+$', key):
@@ -92,7 +130,7 @@ def get_filtered_data(
                 op = last_part
             else:
                 column = key
-                op = "eq"   
+                op = "eq"
         else:
             column = key
             op = "eq"
@@ -109,20 +147,56 @@ def get_filtered_data(
 
         sql_op = operator_map[op]
         param_name = f"{column}_{op}"
-        conditions.append(f"{actual_column} {sql_op} :{param_name}")
-        if op == "like":
-            params[param_name] = f"%{value}%"
+
+        if op == "in":
+            if not isinstance(value, str):
+                raise ValueError(f"Invalid IN filter value for {key}")
+
+            values = [item.strip() for item in value.split(",") if item.strip()]
+            if not values:
+                raise ValueError(f"IN filter must contain at least one value: {key}")
+
+            placeholders = []
+            for index, item in enumerate(values):
+                item_param = f"{param_name}_{index}"
+                placeholders.append(f":{item_param}")
+                params[item_param] = parse_value(item)
+
+            conditions.append(f"{actual_column} {sql_op} ({', '.join(placeholders)})")
+        elif op == "between":
+            if not isinstance(value, str):
+                raise ValueError(f"Invalid BETWEEN filter value for {key}")
+
+            bounds = [item.strip() for item in value.split(",")]
+            if len(bounds) != 2 or not bounds[0] or not bounds[1]:
+                raise ValueError(f"BETWEEN filter must contain low and high values: {key}")
+
+            low_param = f"{param_name}_low"
+            high_param = f"{param_name}_high"
+            params[low_param] = parse_value(bounds[0])
+            params[high_param] = parse_value(bounds[1])
+            conditions.append(
+                f"{actual_column} {sql_op} :{low_param} AND :{high_param}"
+            )
         else:
-            params[param_name] = value
+            conditions.append(f"{actual_column} {sql_op} :{param_name}")
+            if op == "like":
+                params[param_name] = f"%{value}%"
+            else:
+                params[param_name] = parse_value(value)
 
     where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    order_clause = order_clause or ""
 
     query = text(
-        f"SELECT * FROM {table_name} {where_clause} LIMIT :limit OFFSET :offset"
+        f"{select_clause} FROM {table_name} {where_clause} {order_clause} LIMIT :limit OFFSET :offset"
     )
 
     params["limit"] = limit
     params["offset"] = offset
+
+    print("QUERY:", query)
+    print("PARAMS:", params)
 
     try:
         df = pd.read_sql(query, engine, params=params)

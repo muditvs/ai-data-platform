@@ -7,6 +7,10 @@ router = APIRouter()
 async def read_table_data(table_name: str, request: Request):
     query_params = dict(request.query_params)
 
+    sort_by = query_params.pop("sort_by", None)
+    order = query_params.pop("order", "asc")
+    fields = query_params.pop("fields", None)          
+
     try:
         limit = int(query_params.pop("limit", 10))
         offset = int(query_params.pop("offset", 0))
@@ -19,6 +23,9 @@ async def read_table_data(table_name: str, request: Request):
             limit=limit,
             offset=offset,
             filters=query_params,
+            sort_by=sort_by,
+            order=order,
+            fields=fields,
         )
         return {
             "table": table_name,
