@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Request
-from app.services.data_service import get_filtered_data
+from app.services.data_service import get_data
 
 router = APIRouter()
 
@@ -20,7 +20,7 @@ async def read_table_data(table_name: str, request: Request):
         raise HTTPException(status_code=400, detail="limit and offset must be integer values")
 
     try:
-        records = get_filtered_data(
+        records = get_data(
             table_name,
             limit=limit,
             offset=offset,

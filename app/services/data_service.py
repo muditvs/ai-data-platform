@@ -246,3 +246,27 @@ def get_filtered_data(
         if 'no such table' in message:
             raise LookupError(f"Table not found: {table_name}")
         raise
+
+
+def get_data(
+    table_name: str,
+    limit: int = 10,
+    offset: int = 0,
+    filters: dict | None = None,
+    sort_by: str | None = None,
+    order: str = "asc",
+    fields: str | None = None,
+    agg: str | None = None,
+    group_by: str | None = None,
+) -> list[dict]:
+    return get_filtered_data(
+        table_name,
+        limit=limit,
+        offset=offset,
+        filters=filters,
+        sort_by=sort_by,
+        order=order,
+        fields=fields,
+        agg=agg,
+        group_by=group_by,
+    )
