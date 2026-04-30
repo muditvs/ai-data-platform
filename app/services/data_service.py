@@ -71,6 +71,8 @@ def get_filtered_data(
     sort_by: str | None = None,
     order: str = "asc",
     fields: str | None = None,
+    agg: str | None = None,
+    group_by: str | None = None,
 ): 
     if not re.match(r'^[A-Za-z0-9_]+$', table_name):
         raise ValueError(f"Invalid table name: {table_name}")
@@ -96,19 +98,57 @@ def get_filtered_data(
 
     valid_columns_lower = {col.lower(): col for col in valid_columns}
 
-    if fields:
-        selected_fields = [item.strip() for item in fields.split(",") if item.strip()]
-        if not selected_fields:
-            raise ValueError("fields must contain at least one column")
-        select_columns = []
-        for field in selected_fields:
-            field_lower = field.lower()
-            if field_lower not in valid_columns_lower:
-                raise ValueError(f"Invalid field selection: {field}")
-            select_columns.append(valid_columns_lower[field_lower])
-        select_clause = f"SELECT {', '.join(select_columns)}"
+    agg_mapping = {
+        "avg": "AVG",
+        "sum": "SUM",
+        "min": "MIN",
+        "max": "MAX",
+    }
+
+    if agg:
+        agg_lower = agg.lower()
+        if agg_lower == "count":
+            agg_clause = " COUNT(*)"
+            agg_column = None
+        elif "_" in agg_lower:
+            function, _, agg_column = agg_lower.partition("_")
+            if function not in agg_mapping or not agg_column:
+                raise ValueError(f"Invalid agg parameter: {agg}")
+            if agg_column not in valid_columns_lower:
+                raise ValueError(f"Invalid aggregation column: {agg_column}")
+            agg_clause = f"{agg_mapping[function]}({valid_columns_lower[agg_column]})"
+        else:
+            raise ValueError(f"Invalid agg parameter: {agg}")
+
+        if group_by:
+            group_by_lower = group_by.lower()
+            if group_by_lower not in valid_columns_lower:
+                raise ValueError(f"Invalid group_by column: {group_by}")
+            group_by_column = valid_columns_lower[group_by_lower]
+            select_clause = f"SELECT {group_by_column}, {agg_clause}"
+            group_by_clause = f"GROUP BY {group_by_column}"
+        else:
+            select_clause = f"SELECT {agg_clause}"
+            group_by_clause = ""
     else:
-        select_clause = "SELECT *"
+        if group_by:
+            raise ValueError("group_by requires agg parameter")
+
+        if fields:
+            selected_fields = [item.strip() for item in fields.split(",") if item.strip()]
+            if not selected_fields:
+                raise ValueError("fields must contain at least one column")
+            select_columns = []
+            for field in selected_fields:
+                field_lower = field.lower()
+                if field_lower not in valid_columns_lower:  
+                    raise ValueError(f"Invalid field selection: {field}")
+                select_columns.append(valid_columns_lower[field_lower])
+            select_clause = f"SELECT {', '.join(select_columns)}"
+        else:
+            select_clause = "SELECT *"
+
+        group_by_clause = ""
 
     order_clause = ""
     if sort_by:
@@ -189,7 +229,7 @@ def get_filtered_data(
     order_clause = order_clause or ""
 
     query = text(
-        f"{select_clause} FROM {table_name} {where_clause} {order_clause} LIMIT :limit OFFSET :offset"
+        f"{select_clause} FROM {table_name} {where_clause} {group_by_clause} {order_clause} LIMIT :limit OFFSET :offset"
     )
 
     params["limit"] = limit

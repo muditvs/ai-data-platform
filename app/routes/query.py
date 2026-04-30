@@ -9,7 +9,9 @@ async def read_table_data(table_name: str, request: Request):
 
     sort_by = query_params.pop("sort_by", None)
     order = query_params.pop("order", "asc")
-    fields = query_params.pop("fields", None)          
+    fields = query_params.pop("fields", None)
+    agg = query_params.pop("agg", None)
+    group_by = query_params.pop("group_by", None)
 
     try:
         limit = int(query_params.pop("limit", 10))
@@ -26,6 +28,8 @@ async def read_table_data(table_name: str, request: Request):
             sort_by=sort_by,
             order=order,
             fields=fields,
+            agg=agg,
+            group_by=group_by,
         )
         return {
             "table": table_name,
